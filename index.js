@@ -7,19 +7,19 @@ app.use(express.json());
 const ACCESS_TOKEN = "je6rkufkJko4VwdKUgH/0U/tgXgp5J3rezOeMWP5wDFkVSoJxz6b1q4hMOcMmC6j5+PlR1PebVSPSgsufcnsIoqRT6lwiNgWL8FY8ev0aHUr3lu7hgNQjsgCr8PXZmvsSfEiXQe+lPvmWBZ5s70QIwdB04t89/1O/w1cDnyilFU=";
 // ===== ここを自分の医院用に変更 =====
 const CLINIC_NAME = "大畑歯科口腔外科 世田谷分院";
-const RESERVE_URL = "https://example.com";
-const PHONE_NUMBER = "03-XXXX-XXXX";
+const RESERVE_URL = "www.ohata-dental.jp/setagaya/index.html";
+const PHONE_NUMBER = "03-5779-9225";
 
 // 営業時間設定
 // 0:日 1:月 2:火 3:水 4:木 5:金 6:土
 const BUSINESS_HOURS = {
-  0: { start: "09:00", end: "17:00" }, // 日
-  1: { start: "09:00", end: "18:00" }, // 月
-  2: { start: "09:00", end: "18:00" }, // 火
-  3: { start: "09:00", end: "18:00" }, // 水
-  4: { start: "09:00", end: "18:00" }, // 木
-  5: { start: "09:00", end: "18:00" }, // 金
-  6: { start: "09:00", end: "17:00" }, // 土
+  0: { start: "09:00", end: "16:00" }, // 日
+  1: { start: "10:00", end: "19:00" }, // 月
+  2: { start: "10:00", end: "19:00" }, // 火
+  3: { start: "10:00", end: "19:00" }, // 水
+  4: { start: "10:00", end: "19:00" }, // 木
+  5: { start: "10:00", end: "19:00" }, // 金
+  6: { start: "10:00", end: "19:00" }, // 土
 };
 // ====================================
 
