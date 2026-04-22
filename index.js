@@ -4,9 +4,6 @@ import fetch from "node-fetch";
 const app = express();
 app.use(express.json());
 
-import dotenv from "dotenv";
-dotenv.config();
-
 const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 // ===== ここを自分の医院用に変更 =====
 const CLINIC_NAME = "大畑歯科口腔外科 世田谷分院";
