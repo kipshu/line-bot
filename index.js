@@ -1,7 +1,8 @@
 import express from "express";
 import fetch from "node-fetch"
 
-console.log("NEW CODE DEPLOYED 2026-04-22");const app = express();
+console.log("NEW CODE DEPLOYED 2026-04-22");
+const app = express();
 app.use(express.json());
 
 const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
