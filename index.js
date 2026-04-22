@@ -4,7 +4,10 @@ import fetch from "node-fetch";
 const app = express();
 app.use(express.json());
 
-const ACCESS_TOKEN = "je6rkufkJko4VwdKUgH/0U/tgXgp5J3rezOeMWP5wDFkVSoJxz6b1q4hMOcMmC6j5+PlR1PebVSPSgsufcnsIoqRT6lwiNgWL8FY8ev0aHUr3lu7hgNQjsgCr8PXZmvsSfEiXQe+lPvmWBZ5s70QIwdB04t89/1O/w1cDnyilFU=";
+import dotenv from "dotenv";
+dotenv.config();
+
+const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 // ===== ここを自分の医院用に変更 =====
 const CLINIC_NAME = "大畑歯科口腔外科 世田谷分院";
 const RESERVE_URL = "www.ohata-dental.jp/setagaya/index.html";
