@@ -1,28 +1,36 @@
 import express from "express";
-import fetch from "node-fetch"
+import fetch from "node-fetch";
+import OpenAI from "openai";
 
-console.log("NEW CODE DEPLOYED 2026-04-22");
+console.log("NEW CODE DEPLOYED 2026-04-23");
+
 const app = express();
 app.use(express.json());
 
 const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
 // ===== ここを自分の医院用に変更 =====
 const CLINIC_NAME = "大畑歯科口腔外科 世田谷分院";
-const RESERVE_URL = "www.ohata-dental.jp/setagaya/index.html";
+const RESERVE_URL = "https://www.ohata-dental.jp/setagaya/index.html";
 const PHONE_NUMBER = "03-5779-9225";
+// ====================================
+
+const openai = new OpenAI({
+  apiKey: OPENAI_API_KEY,
+});
 
 // 営業時間設定
 // 0:日 1:月 2:火 3:水 4:木 5:金 6:土
 const BUSINESS_HOURS = {
-  0: { start: "09:00", end: "16:00" }, // 日
-  1: { start: "10:00", end: "19:00" }, // 月
-  2: { start: "10:00", end: "19:00" }, // 火
-  3: { start: "10:00", end: "19:00" }, // 水
-  4: { start: "10:00", end: "19:00" }, // 木
-  5: { start: "10:00", end: "19:00" }, // 金
-  6: { start: "10:00", end: "19:00" }, // 土
+  0: { start: "09:00", end: "16:00" },
+  1: { start: "10:00", end: "19:00" },
+  2: { start: "10:00", end: "19:00" },
+  3: { start: "10:00", end: "19:00" },
+  4: { start: "10:00", end: "19:00" },
+  5: { start: "10:00", end: "19:00" },
+  6: { start: "10:00", end: "19:00" },
 };
-// ====================================
 
 function toMinutes(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
@@ -103,6 +111,7 @@ function categoryReply(text) {
   if (
     text === "1" ||
     text === "①" ||
+    text === "① 詰め物・被せ物" ||
     text.includes("詰め") ||
     text.includes("被せ")
   ) {
@@ -120,6 +129,7 @@ ${PHONE_NUMBER}
   if (
     text === "2" ||
     text === "②" ||
+    text === "② 親知らず" ||
     text.includes("親知らず")
   ) {
     return `親知らずのご相談ですね。
@@ -137,6 +147,7 @@ ${PHONE_NUMBER}
   if (
     text === "3" ||
     text === "③" ||
+    text === "③ 見た目・セラミック" ||
     text.includes("見た目") ||
     text.includes("セラミック") ||
     text.includes("審美")
@@ -155,6 +166,7 @@ ${PHONE_NUMBER}
   if (
     text === "4" ||
     text === "④" ||
+    text === "④ クリーニング" ||
     text.includes("クリーニング") ||
     text.includes("メンテ")
   ) {
@@ -172,6 +184,7 @@ ${PHONE_NUMBER}
   if (
     text === "5" ||
     text === "⑤" ||
+    text === "⑤ その他" ||
     text.includes("その他")
   ) {
     return `ありがとうございます。
@@ -186,7 +199,7 @@ ${RESERVE_URL}
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
-  return noPainMenu();
+  return null;
 }
 
 function consultReply(text) {
@@ -219,20 +232,11 @@ function consultReply(text) {
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
-  return `ありがとうございます。
-簡単で大丈夫ですので、以下をこのまま送ってください。
-
-・どんなことで困っているか
-・痛みや腫れがあるか
-・いつからか
-
-お急ぎの場合はお電話ください
-${PHONE_NUMBER}
-
-最初に戻る場合は「メニュー」と送ってください。`;
+  return null;
 }
 
-function getReplyText(userMessage) {
+// ここは「判定できたら文字列、できなければ null」を返すようにする
+function getRuleBasedReply(userMessage) {
   const text = (userMessage || "").trim();
   const lower = text.toLowerCase();
 
@@ -245,7 +249,6 @@ function getReplyText(userMessage) {
     return mainMenu();
   }
 
-  // 痛みあり
   if (
     text === "① はい（痛み・腫れがある）" ||
     text === "①" ||
@@ -257,7 +260,6 @@ function getReplyText(userMessage) {
     return painReply();
   }
 
-  // 痛みなし
   if (
     text === "② いいえ（痛み・腫れはない）" ||
     text === "②" ||
@@ -269,7 +271,6 @@ function getReplyText(userMessage) {
     return noPainMenu();
   }
 
-  // 相談したい
   if (
     text === "③ わからない・相談したい" ||
     text === "③" ||
@@ -290,26 +291,9 @@ function getReplyText(userMessage) {
 ${PHONE_NUMBER}`;
   }
 
-  // 痛みなし後の分類
-  if (
-    text === "① 詰め物・被せ物" ||
-    text === "② 親知らず" ||
-    text === "③ 見た目・セラミック" ||
-    text === "④ クリーニング" ||
-    text === "⑤ その他" ||
-    text.includes("詰め") ||
-    text.includes("被せ") ||
-    text.includes("親知らず") ||
-    text.includes("見た目") ||
-    text.includes("セラミック") ||
-    text.includes("審美") ||
-    text.includes("クリーニング") ||
-    text.includes("メンテ")
-  ) {
-    return categoryReply(text);
-  }
+  const category = categoryReply(text);
+  if (category) return category;
 
-  // 自由入力のざっくり判定
   if (
     text.includes("痛") ||
     text.includes("腫れ") ||
@@ -327,12 +311,75 @@ ${PHONE_NUMBER}`;
     text.includes("見た目") ||
     text.includes("詰め物") ||
     text.includes("被せ物") ||
-    text.includes("クリーニング")
+    text.includes("クリーニング") ||
+    text.includes("メンテ")
   ) {
     return categoryReply(text);
   }
 
-  return mainMenu();
+  const consult = consultReply(text);
+  if (consult) return consult;
+
+  return null;
+}
+
+async function askAI(userMessage) {
+  const response = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      {
+        role: "system",
+        content: `あなたは歯科医院のLINE受付補助です。
+診断はせず、案内だけをしてください。
+方針:
+- 痛み、腫れ、出血、強い違和感は電話案内を優先
+- 緊急性が低い相談は予約URLを案内
+- 不明な内容は簡単に追加情報を聞く
+- 100文字以内
+- 丁寧で簡潔
+- 薬の指示や診断はしない
+電話番号: ${PHONE_NUMBER}
+予約URL: ${RESERVE_URL}`,
+      },
+      {
+        role: "user",
+        content: userMessage,
+      },
+    ],
+  });
+
+  return (
+    response.output_text ||
+    `お問い合わせありがとうございます。詳しい内容をこのまま送っていただくか、お電話 ${PHONE_NUMBER} にてご相談ください。`
+  );
+}
+
+async function getReplyText(userMessage) {
+  const ruleReply = getRuleBasedReply(userMessage);
+  if (ruleReply) return ruleReply;
+
+  if (!OPENAI_API_KEY) {
+    return `ありがとうございます。
+詳しい内容をこのまま送っていただくか、お電話 ${PHONE_NUMBER} にてご相談ください。
+
+ご予約はこちら
+${RESERVE_URL}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  try {
+    return await askAI(userMessage);
+  } catch (error) {
+    console.error("OpenAI error:", error);
+    return `ありがとうございます。
+詳しい内容をこのまま送っていただくか、お電話 ${PHONE_NUMBER} にてご相談ください。
+
+ご予約はこちら
+${RESERVE_URL}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
 }
 
 app.post("/webhook", async (req, res) => {
@@ -345,7 +392,7 @@ app.post("/webhook", async (req, res) => {
       }
 
       const userMessage = event.message.text;
-      const replyText = getReplyText(userMessage);
+      const replyText = await getReplyText(userMessage);
 
       await fetch("https://api.line.me/v2/bot/message/reply", {
         method: "POST",
