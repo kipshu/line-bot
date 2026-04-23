@@ -1,13 +1,21 @@
 import express from "express";
 import fetch from "node-fetch";
 import OpenAI from "openai";
+import crypto from "crypto";
 
 console.log("NEW CODE DEPLOYED 2026-04-23");
 
 const app = express();
-app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
+const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 // ===== ここを自分の医院用に変更 =====
@@ -16,11 +24,11 @@ const RESERVE_URL = "https://www.ohata-dental.jp/setagaya/index.html";
 const PHONE_NUMBER = "03-5779-9225";
 // ====================================
 
-const openai = new OpenAI({
-  apiKey: OPENAI_API_KEY,
-});
+const openai = OPENAI_API_KEY
+  ? new OpenAI({ apiKey: OPENAI_API_KEY })
+  : null;
 
-// 営業時間設定
+// 営業時間設定（JST基準）
 // 0:日 1:月 2:火 3:水 4:木 5:金 6:土
 const BUSINESS_HOURS = {
   0: { start: "09:00", end: "16:00" },
@@ -32,26 +40,123 @@ const BUSINESS_HOURS = {
   6: { start: "10:00", end: "19:00" },
 };
 
+const KEYWORDS = {
+  urgent: ["痛い", "かなり痛い", "ズキズキ", "腫れ", "出血", "膿", "急ぎ", "今日", "寝られない"],
+  mildPain: ["しみる", "冷たい", "熱い", "違和感", "少し痛い", "噛むと痛い"],
+  filling: ["詰め物", "詰め", "銀歯", "被せ物", "被せ", "取れた", "外れた", "ぐらぐら"],
+  broken: ["欠けた", "割れた", "ヒビ", "折れた"],
+  wisdom: ["親知らず", "親不知", "抜歯"],
+  gum: ["歯ぐき", "歯茎", "歯周病", "口臭", "膿"],
+  cleaning: ["クリーニング", "歯石", "歯石取り", "メンテ", "定期検診", "検診", "掃除"],
+  esthetic: ["ホワイトニング", "白くしたい", "見た目", "セラミック", "審美", "銀歯を白く"],
+  denture: ["入れ歯", "義歯", "合わない", "外れる", "噛めない"],
+  child: ["子ども", "こども", "子供", "乳歯", "フッ素", "学校検診"],
+};
+
+function verifyLineSignature(req) {
+  if (!LINE_CHANNEL_SECRET) {
+    console.warn("LINE_CHANNEL_SECRET is missing");
+    return true;
+  }
+
+  const signature = req.headers["x-line-signature"];
+  if (!signature || !req.rawBody) return false;
+
+  const digest = crypto
+    .createHmac("sha256", LINE_CHANNEL_SECRET)
+    .update(req.rawBody)
+    .digest("base64");
+
+  const a = Buffer.from(signature);
+  const b = Buffer.from(digest);
+
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
+
 function toMinutes(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
 }
 
+function getTokyoNowParts() {
+  const parts = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour12: false,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(new Date());
+
+  const map = {};
+  for (const part of parts) {
+    map[part.type] = part.value;
+  }
+
+  const weekdayMap = {
+    日: 0,
+    月: 1,
+    火: 2,
+    水: 3,
+    木: 4,
+    金: 5,
+    土: 6,
+  };
+
+  return {
+    day: weekdayMap[map.weekday],
+    hour: Number(map.hour),
+    minute: Number(map.minute),
+  };
+}
+
 function isBusinessOpenNow() {
-  const now = new Date();
-  const day = now.getDay();
-  const schedule = BUSINESS_HOURS[day];
+  const now = getTokyoNowParts();
+  const schedule = BUSINESS_HOURS[now.day];
   if (!schedule) return false;
 
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const currentMinutes = now.hour * 60 + now.minute;
   return (
     currentMinutes >= toMinutes(schedule.start) &&
     currentMinutes <= toMinutes(schedule.end)
   );
 }
 
+function normalizeText(text) {
+  return (text || "").trim().replace(/\s+/g, " ");
+}
+
+function formatForLine(text) {
+  return (text || "")
+    .replace(/。/g, "。\n")
+    .replace(/！/g, "！\n")
+    .replace(/!/g, "!\n")
+    .replace(/？/g, "？\n")
+    .replace(/\?/g, "?\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 1000);
+}
+
+function includesAny(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function fallbackReply() {
+  return `ありがとうございます。
+
+詳しい内容をこのまま送っていただくか、
+お電話 ${PHONE_NUMBER} にてご相談ください。
+
+ご予約はこちら
+${RESERVE_URL}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+}
+
 function mainMenu() {
   return `${CLINIC_NAME}です。
+
 今、痛みや腫れはありますか？
 
 ① はい（痛み・腫れがある）
@@ -77,7 +182,9 @@ function painReply() {
   if (isBusinessOpenNow()) {
     return `痛み・腫れがある場合は、早めの確認をおすすめします。
 
-【まずはお電話ください】
+本日対応できる可能性があります。
+まずはお電話ください。
+
 ${PHONE_NUMBER}
 
 このまま
@@ -86,7 +193,7 @@ ${PHONE_NUMBER}
 ・いつからか
 を送っていただければ、受付確認用の内容としてお預かりできます。
 
-※ 予約をご希望の方はこちら
+予約をご希望の方はこちら
 ${RESERVE_URL}
 
 最初に戻る場合は「メニュー」と送ってください。`;
@@ -95,11 +202,10 @@ ${RESERVE_URL}
   return `痛み・腫れがある場合は、早めの確認をおすすめします。
 現在は診療時間外です。
 
-【お急ぎの場合】
-まずはお電話でご確認ください
+お急ぎの場合は、まずはお電話でご確認ください。
 ${PHONE_NUMBER}
 
-【予約をご希望の方】
+予約をご希望の方はこちら
 ${RESERVE_URL}
 
 強い痛み・強い腫れ・出血がある場合は、無理をせず早めの相談をご検討ください。
@@ -135,6 +241,7 @@ ${PHONE_NUMBER}
     return `親知らずのご相談ですね。
 
 当院では口腔外科系のご相談にも対応しています。
+
 ご予約はこちら
 ${RESERVE_URL}
 
@@ -188,7 +295,9 @@ ${PHONE_NUMBER}
     text.includes("その他")
   ) {
     return `ありがとうございます。
-詳しい内容は、このままメッセージで送っていただくか、お電話でご相談ください。
+
+詳しい内容をこのままメッセージで送っていただくか、
+お電話でご相談ください。
 
 お電話
 ${PHONE_NUMBER}
@@ -208,7 +317,8 @@ function consultReply(text) {
     text.includes("腫れ") ||
     text.includes("出血") ||
     text.includes("しみる") ||
-    text.includes("噛むと痛い")
+    text.includes("噛むと痛い") ||
+    text.includes("ズキズキ")
   ) {
     return painReply();
   }
@@ -222,6 +332,7 @@ function consultReply(text) {
     text.includes("クリーニング")
   ) {
     return `ありがとうございます。
+
 内容に応じたご案内をいたします。
 
 まず、痛みや腫れはありますか？
@@ -235,9 +346,132 @@ function consultReply(text) {
   return null;
 }
 
-// ここは「判定できたら文字列、できなければ null」を返すようにする
+function detailedRuleReply(text) {
+  if (includesAny(text, KEYWORDS.urgent)) {
+    return painReply();
+  }
+
+  if (includesAny(text, KEYWORDS.mildPain)) {
+    return `しみる・違和感がある場合は、早めの確認をおすすめします。
+
+症状が強い場合はお電話でのご案内が最短です。
+${PHONE_NUMBER}
+
+ご予約はこちら
+${RESERVE_URL}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.filling)) {
+    return `詰め物・被せ物が外れた可能性があります。
+
+早めの受診をおすすめします。
+
+ご予約はこちら
+${RESERVE_URL}
+
+お急ぎの場合はお電話ください
+${PHONE_NUMBER}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.broken)) {
+    return `歯が欠けた・割れた可能性があります。
+
+早めの確認をおすすめします。
+
+お急ぎの場合はお電話ください
+${PHONE_NUMBER}
+
+ご予約はこちら
+${RESERVE_URL}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.wisdom)) {
+    return `親知らずのご相談ですね。
+
+当院では口腔外科系のご相談にも対応しています。
+
+ご予約はこちら
+${RESERVE_URL}
+
+お電話でのご相談
+${PHONE_NUMBER}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.gum)) {
+    return `歯ぐきの症状がある場合は、早めの確認をおすすめします。
+
+症状が強い場合はお電話ください
+${PHONE_NUMBER}
+
+ご予約はこちら
+${RESERVE_URL}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.cleaning)) {
+    return `クリーニング・検診のご相談ですね。
+
+ご予約はこちら
+${RESERVE_URL}
+
+お電話でのご相談
+${PHONE_NUMBER}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.esthetic)) {
+    return `見た目・セラミックのご相談ですね。
+
+カウンセリング予約はこちら
+${RESERVE_URL}
+
+お電話でのご相談
+${PHONE_NUMBER}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.denture)) {
+    return `入れ歯のご相談ですね。
+
+痛みや違和感がある場合は、早めの受診をおすすめします。
+
+ご予約はこちら
+${RESERVE_URL}
+
+お電話でのご相談
+${PHONE_NUMBER}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (includesAny(text, KEYWORDS.child)) {
+    return `お子さまの歯のご相談ですね。
+
+ご予約はこちら
+${RESERVE_URL}
+
+お電話でのご相談
+${PHONE_NUMBER}
+
+最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  return null;
+}
+
 function getRuleBasedReply(userMessage) {
-  const text = (userMessage || "").trim();
+  const text = normalizeText(userMessage);
   const lower = text.toLowerCase();
 
   if (
@@ -279,6 +513,7 @@ function getRuleBasedReply(userMessage) {
     text.includes("わからない")
   ) {
     return `ご相談ありがとうございます。
+
 今のお困りごとに近いものを送ってください。
 
 例）
@@ -293,6 +528,9 @@ ${PHONE_NUMBER}`;
 
   const category = categoryReply(text);
   if (category) return category;
+
+  const detailed = detailedRuleReply(text);
+  if (detailed) return detailed;
 
   if (
     text.includes("痛") ||
@@ -324,22 +562,50 @@ ${PHONE_NUMBER}`;
 }
 
 async function askAI(userMessage) {
+  if (!openai) {
+    return fallbackReply();
+  }
+
+  const openNow = isBusinessOpenNow() ? "診療時間内" : "診療時間外";
+
   const response = await openai.responses.create({
     model: "gpt-4.1-mini",
     input: [
       {
         role: "system",
-        content: `あなたは歯科医院のLINE受付補助です。
-診断はせず、案内だけをしてください。
-方針:
-- 痛み、腫れ、出血、強い違和感は電話案内を優先
-- 緊急性が低い相談は予約URLを案内
-- 不明な内容は簡単に追加情報を聞く
-- 100文字以内
-- 丁寧で簡潔
-- 薬の指示や診断はしない
-電話番号: ${PHONE_NUMBER}
-予約URL: ${RESERVE_URL}`,
+        content: `
+あなたは歯科医院のLINE受付補助です。
+役割は「診断」ではなく「行動案内」です。
+
+絶対ルール:
+- 診断しない
+- 薬の指示をしない
+- 治療方針を断定しない
+- 必ず丁寧で短く答える
+- 必ず改行を入れて読みやすくする
+- 1行は短く
+- 全体で4〜6行以内
+- 緊急性がある内容は電話案内を優先
+- 緊急性が低い内容は予約URLを案内
+- 判断が難しい場合は、追加で1つだけ短く確認してよい
+- 最後は必ず次の行動で終える
+
+導線ルール:
+- 痛み、腫れ、出血、強い違和感、急ぎ、取れた、外れた、欠けた、割れた → 電話優先
+- 見た目、セラミック、クリーニング、親知らず相談、ホワイトニング → 予約URL案内
+- 予約か電話か迷う場合は、まず電話案内を優先
+
+医院情報:
+- 医院名: ${CLINIC_NAME}
+- 現在: ${openNow}
+- 電話番号: ${PHONE_NUMBER}
+- 予約URL: ${RESERVE_URL}
+
+出力ルール:
+- ユーザーにそのまま送る本文のみ出力
+- URLと電話番号はそのまま表示
+- 改行を自然に使う
+        `.trim(),
       },
       {
         role: "user",
@@ -348,42 +614,51 @@ async function askAI(userMessage) {
     ],
   });
 
-  return (
-    response.output_text ||
-    `お問い合わせありがとうございます。詳しい内容をこのまま送っていただくか、お電話 ${PHONE_NUMBER} にてご相談ください。`
-  );
+  const text = response.output_text?.trim();
+  if (!text) {
+    return fallbackReply();
+  }
+
+  return formatForLine(text);
 }
 
 async function getReplyText(userMessage) {
   const ruleReply = getRuleBasedReply(userMessage);
   if (ruleReply) return ruleReply;
 
-  if (!OPENAI_API_KEY) {
-    return `ありがとうございます。
-詳しい内容をこのまま送っていただくか、お電話 ${PHONE_NUMBER} にてご相談ください。
-
-ご予約はこちら
-${RESERVE_URL}
-
-最初に戻る場合は「メニュー」と送ってください。`;
-  }
-
   try {
     return await askAI(userMessage);
   } catch (error) {
     console.error("OpenAI error:", error);
-    return `ありがとうございます。
-詳しい内容をこのまま送っていただくか、お電話 ${PHONE_NUMBER} にてご相談ください。
+    return fallbackReply();
+  }
+}
 
-ご予約はこちら
-${RESERVE_URL}
+async function replyToLine(replyToken, text) {
+  const response = await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${ACCESS_TOKEN}`,
+    },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "text", text: text.slice(0, 5000) }],
+    }),
+  });
 
-最初に戻る場合は「メニュー」と送ってください。`;
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`LINE reply failed: ${response.status} ${body}`);
   }
 }
 
 app.post("/webhook", async (req, res) => {
   try {
+    if (!verifyLineSignature(req)) {
+      return res.status(401).send("Invalid signature");
+    }
+
     const events = req.body.events || [];
 
     for (const event of events) {
@@ -391,20 +666,14 @@ app.post("/webhook", async (req, res) => {
         continue;
       }
 
+      if (!event.replyToken) {
+        continue;
+      }
+
       const userMessage = event.message.text;
       const replyText = await getReplyText(userMessage);
 
-      await fetch("https://api.line.me/v2/bot/message/reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${ACCESS_TOKEN}`,
-        },
-        body: JSON.stringify({
-          replyToken: event.replyToken,
-          messages: [{ type: "text", text: replyText }],
-        }),
-      });
+      await replyToLine(event.replyToken, replyText);
     }
 
     res.sendStatus(200);
@@ -414,7 +683,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.send("LINE bot is running.");
 });
 
