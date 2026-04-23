@@ -41,22 +41,56 @@ const BUSINESS_HOURS = {
 };
 
 const KEYWORDS = {
-  urgent: ["痛い", "かなり痛い", "ズキズキ", "腫れ", "出血", "膿", "急ぎ", "今日", "寝られない"],
+  urgent: ["痛い", "かなり痛い", "ズキズキ", "腫れ", "出血", "急ぎ", "今日", "寝られない"],
   mildPain: ["しみる", "冷たい", "熱い", "違和感", "少し痛い", "噛むと痛い"],
   filling: ["詰め物", "詰め", "銀歯", "被せ物", "被せ", "取れた", "外れた", "ぐらぐら"],
   broken: ["欠けた", "割れた", "ヒビ", "折れた"],
   wisdom: ["親知らず", "親不知", "抜歯"],
-  gum: ["歯ぐき", "歯茎", "歯周病", "口臭", "膿"],
+  gum: ["歯ぐき", "歯茎", "歯周病", "口臭", "膿"], // ★修正：urgentと重複していた「膿」はurgentから削除してここに統一
   cleaning: ["クリーニング", "歯石", "歯石取り", "メンテ", "定期検診", "検診", "掃除"],
   esthetic: ["ホワイトニング", "白くしたい", "見た目", "セラミック", "審美", "銀歯を白く"],
   denture: ["入れ歯", "義歯", "合わない", "外れる", "噛めない"],
   child: ["子ども", "こども", "子供", "乳歯", "フッ素", "学校検診"],
 };
 
+const userStateMap = new Map();
+
+function getUserState(userId) {
+  return (
+    userStateMap.get(userId) || {
+      category: null,
+      painCount: 0,
+      lastReply: "",
+      updatedAt: Date.now(),
+    }
+  );
+}
+
+function setUserState(userId, nextState) {
+  userStateMap.set(userId, {
+    ...nextState,
+    updatedAt: Date.now(),
+  });
+}
+
+function cleanupOldStates() {
+  const now = Date.now();
+  const ttl = 1000 * 60 * 60 * 12; // 12時間
+  for (const [userId, state] of userStateMap.entries()) {
+    if (!state.updatedAt || now - state.updatedAt > ttl) {
+      userStateMap.delete(userId);
+    }
+  }
+}
+
+// ★修正：cleanupはsetIntervalで定期実行。毎リクエストで走らせない
+setInterval(cleanupOldStates, 1000 * 60 * 30); // 30分ごと
+
 function verifyLineSignature(req) {
+  // ★修正：シークレット未設定時は素通りさせず拒否する
   if (!LINE_CHANNEL_SECRET) {
-    console.warn("LINE_CHANNEL_SECRET is missing");
-    return true;
+    console.error("LINE_CHANNEL_SECRET is not set. Rejecting request.");
+    return false;
   }
 
   const signature = req.headers["x-line-signature"];
@@ -143,15 +177,14 @@ function includesAny(text, keywords) {
 }
 
 function fallbackReply() {
+  // ★修正：「最初に戻る」案内を削除。fallbackは電話・予約だけに絞る
   return `ありがとうございます。
 
 詳しい内容をこのまま送っていただくか、
 お電話 ${PHONE_NUMBER} にてご相談ください。
 
 ご予約はこちら
-${RESERVE_URL}
-
-最初に戻る場合は「メニュー」と送ってください。`;
+${RESERVE_URL}`;
 }
 
 function mainMenu() {
@@ -178,8 +211,17 @@ function noPainMenu() {
 ※ 最初に戻るときは「メニュー」と送ってください。`;
 }
 
-function painReply() {
+function painReply(isFollowUp = false) {
   if (isBusinessOpenNow()) {
+    if (isFollowUp) {
+      return `症状が強そうです。
+
+本日対応できる可能性があります。
+お電話でのご案内が最短です。
+
+${PHONE_NUMBER}`;
+    }
+
     return `痛み・腫れがある場合は、早めの確認をおすすめします。
 
 本日対応できる可能性があります。
@@ -197,6 +239,18 @@ ${PHONE_NUMBER}
 ${RESERVE_URL}
 
 最初に戻る場合は「メニュー」と送ってください。`;
+  }
+
+  if (isFollowUp) {
+    return `症状が強そうです。
+
+お急ぎの場合は、
+まずはお電話でご確認ください。
+
+${PHONE_NUMBER}
+
+予約はこちら
+${RESERVE_URL}`;
   }
 
   return `痛み・腫れがある場合は、早めの確認をおすすめします。
@@ -470,9 +524,10 @@ ${PHONE_NUMBER}
   return null;
 }
 
-function getRuleBasedReply(userMessage) {
+function getRuleBasedReply(userMessage, userId) {
   const text = normalizeText(userMessage);
   const lower = text.toLowerCase();
+  const state = getUserState(userId);
 
   if (
     lower === "menu" ||
@@ -480,18 +535,36 @@ function getRuleBasedReply(userMessage) {
     text === "最初" ||
     text === "戻る"
   ) {
+    setUserState(userId, {
+      category: null,
+      painCount: 0,
+      lastReply: "menu",
+    });
     return mainMenu();
   }
 
-  if (
+  const isPainLike =
     text === "① はい（痛み・腫れがある）" ||
     text === "①" ||
     text === "1" ||
     text === "はい" ||
     text.includes("痛みあり") ||
-    text.includes("腫れあり")
-  ) {
-    return painReply();
+    text.includes("腫れあり") ||
+    text.includes("痛") ||
+    text.includes("腫れ") ||
+    text.includes("出血") ||
+    text.includes("しみる") ||
+    text.includes("ズキズキ") ||
+    text.includes("噛むと痛い");
+
+  if (isPainLike) {
+    const nextPainCount = (state.painCount || 0) + 1;
+    setUserState(userId, {
+      category: "pain",
+      painCount: nextPainCount,
+      lastReply: "pain",
+    });
+    return painReply(nextPainCount >= 2);
   }
 
   if (
@@ -502,6 +575,11 @@ function getRuleBasedReply(userMessage) {
     text.includes("痛みない") ||
     text.includes("痛みなし")
   ) {
+    setUserState(userId, {
+      category: "no_pain",
+      painCount: 0,
+      lastReply: "no_pain",
+    });
     return noPainMenu();
   }
 
@@ -512,6 +590,11 @@ function getRuleBasedReply(userMessage) {
     text.includes("相談") ||
     text.includes("わからない")
   ) {
+    setUserState(userId, {
+      category: "consult",
+      painCount: 0,
+      lastReply: "consult",
+    });
     return `ご相談ありがとうございます。
 
 今のお困りごとに近いものを送ってください。
@@ -527,36 +610,47 @@ ${PHONE_NUMBER}`;
   }
 
   const category = categoryReply(text);
-  if (category) return category;
-
-  const detailed = detailedRuleReply(text);
-  if (detailed) return detailed;
-
-  if (
-    text.includes("痛") ||
-    text.includes("腫れ") ||
-    text.includes("出血") ||
-    text.includes("しみる") ||
-    text.includes("ズキズキ") ||
-    text.includes("噛むと痛い")
-  ) {
-    return painReply();
+  if (category) {
+    setUserState(userId, {
+      category: "category",
+      painCount: 0,
+      lastReply: "category",
+    });
+    return category;
   }
 
-  if (
-    text.includes("親知らず") ||
-    text.includes("セラミック") ||
-    text.includes("見た目") ||
-    text.includes("詰め物") ||
-    text.includes("被せ物") ||
-    text.includes("クリーニング") ||
-    text.includes("メンテ")
-  ) {
-    return categoryReply(text);
+  const detailed = detailedRuleReply(text);
+  if (detailed) {
+    const painLikeDetailed =
+      includesAny(text, KEYWORDS.urgent) || includesAny(text, KEYWORDS.mildPain);
+
+    if (painLikeDetailed) {
+      const nextPainCount = (state.painCount || 0) + 1;
+      setUserState(userId, {
+        category: "pain",
+        painCount: nextPainCount,
+        lastReply: "pain",
+      });
+      return painReply(nextPainCount >= 2);
+    }
+
+    setUserState(userId, {
+      category: "detailed",
+      painCount: 0,
+      lastReply: "detailed",
+    });
+    return detailed;
   }
 
   const consult = consultReply(text);
-  if (consult) return consult;
+  if (consult) {
+    setUserState(userId, {
+      category: "consult",
+      painCount: 0,
+      lastReply: "consult",
+    });
+    return consult;
+  }
 
   return null;
 }
@@ -568,9 +662,11 @@ async function askAI(userMessage) {
 
   const openNow = isBusinessOpenNow() ? "診療時間内" : "診療時間外";
 
-  const response = await openai.responses.create({
-    model: "gpt-4.1-mini",
-    input: [
+  // ★修正：openai.responses.create → openai.chat.completions.create に変更
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 300,
+    messages: [
       {
         role: "system",
         content: `
@@ -614,7 +710,8 @@ async function askAI(userMessage) {
     ],
   });
 
-  const text = response.output_text?.trim();
+  // ★修正：response.output_text → response.choices[0].message.content に変更
+  const text = response.choices[0]?.message?.content?.trim();
   if (!text) {
     return fallbackReply();
   }
@@ -622,12 +719,18 @@ async function askAI(userMessage) {
   return formatForLine(text);
 }
 
-async function getReplyText(userMessage) {
-  const ruleReply = getRuleBasedReply(userMessage);
+async function getReplyText(userMessage, userId) {
+  const ruleReply = getRuleBasedReply(userMessage, userId);
   if (ruleReply) return ruleReply;
 
   try {
-    return await askAI(userMessage);
+    const aiReply = await askAI(userMessage);
+    setUserState(userId, {
+      category: "ai",
+      painCount: 0,
+      lastReply: "ai",
+    });
+    return aiReply;
   } catch (error) {
     console.error("OpenAI error:", error);
     return fallbackReply();
@@ -654,32 +757,38 @@ async function replyToLine(replyToken, text) {
 }
 
 app.post("/webhook", async (req, res) => {
-  try {
-    if (!verifyLineSignature(req)) {
-      return res.status(401).send("Invalid signature");
+  // ★修正：署名検証失敗・処理エラー時もLINEには200を返す
+  // 理由：500を返すとLINEがリトライして二重送信になるため
+
+  if (!verifyLineSignature(req)) {
+    console.warn("Invalid LINE signature");
+    return res.sendStatus(401);
+  }
+
+  // ここから先は常に200で返す
+  res.sendStatus(200);
+
+  const events = req.body.events || [];
+
+  for (const event of events) {
+    if (event.type !== "message" || event.message.type !== "text") {
+      continue;
     }
 
-    const events = req.body.events || [];
+    if (!event.replyToken) {
+      continue;
+    }
 
-    for (const event of events) {
-      if (event.type !== "message" || event.message.type !== "text") {
-        continue;
-      }
+    const userMessage = event.message.text;
+    const userId = event.source?.userId || "unknown-user";
 
-      if (!event.replyToken) {
-        continue;
-      }
-
-      const userMessage = event.message.text;
-      const replyText = await getReplyText(userMessage);
-
+    try {
+      const replyText = await getReplyText(userMessage, userId);
       await replyToLine(event.replyToken, replyText);
+    } catch (error) {
+      // ★修正：個別イベントのエラーはログだけ。replyTokenは1回限りなのでリトライ不要
+      console.error("Event handling error for userId:", userId, error);
     }
-
-    res.sendStatus(200);
-  } catch (error) {
-    console.error("Webhook error:", error);
-    res.sendStatus(500);
   }
 });
 
