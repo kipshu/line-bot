@@ -1,4 +1,3 @@
-
 import OpenAI from "openai";
 import { CLINIC_NAME, RESERVE_URL, PHONE_NUMBER } from "./config.js";
 import { isBusinessOpenNow } from "./time.js";
@@ -25,6 +24,7 @@ export async function askAI(userMessage) {
     return fallbackReply();
   }
 
+  const safeUserMessage = String(userMessage || "").slice(0, 500);
   const openNow = isBusinessOpenNow() ? "診療時間内" : "診療時間外";
 
   const response = await openai.chat.completions.create({
@@ -41,43 +41,28 @@ export async function askAI(userMessage) {
 - 診断しない
 - 薬の指示をしない
 - 治療方針を断定しない
-- 必ず丁寧で短く答える
-- 必ず改行を入れて読みやすくする
-- 1行は短く
-- 全体で4〜6行以内
-- 緊急性がある内容は電話案内を優先
-- 緊急性が低い内容は予約URLを案内
-- 判断が難しい場合は、追加で1つだけ短く確認してよい
-- 最後は必ず次の行動で終える
-
-導線ルール:
-- 痛み、腫れ、出血、強い違和感、急ぎ、取れた、外れた、欠けた、割れた → 電話優先
-- 見た目、セラミック、クリーニング、親知らず相談、ホワイトニング → 予約URL案内
-- 予約か電話か迷う場合は、まず電話案内を優先
+- 必ず短く丁寧に
+- 4〜6行以内
+- 緊急性あり→電話
+- それ以外→予約URL
+- 最後は必ず行動で終える
 
 医院情報:
 - 医院名: ${CLINIC_NAME}
 - 現在: ${openNow}
 - 電話番号: ${PHONE_NUMBER}
 - 予約URL: ${RESERVE_URL}
-
-出力ルール:
-- ユーザーにそのまま送る本文のみ出力
-- URLと電話番号はそのまま表示
-- 改行を自然に使う
         `.trim(),
       },
       {
         role: "user",
-        content: userMessage,
+        content: safeUserMessage,
       },
     ],
   });
 
   const text = response.choices[0]?.message?.content?.trim();
-  if (!text) {
-    return fallbackReply();
-  }
+  if (!text) return fallbackReply();
 
   return formatForLine(text);
 }
