@@ -19,13 +19,20 @@ function formatForLine(text) {
     .slice(0, 1000);
 }
 
+function sanitizeUserMessage(userMessage) {
+  return String(userMessage || "")
+    .replace(/\d{2,4}-\d{2,4}-\d{3,4}/g, "[電話番号]")
+    .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[メールアドレス]")
+    .slice(0, 500);
+}
+
 export async function askAI(userMessage) {
   if (!openai) {
     return fallbackReply();
   }
 
-  const safeUserMessage = String(userMessage || "").slice(0, 500);
-  const openNow = isBusinessOpenNow() ? "診療時間内" : "診療時間外";
+  const safeUserMessage = sanitizeUserMessage(userMessage);
+  const openNow = (await isBusinessOpenNow()) ? "診療時間内" : "診療時間外";
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -52,6 +59,11 @@ export async function askAI(userMessage) {
 - 現在: ${openNow}
 - 電話番号: ${PHONE_NUMBER}
 - 予約URL: ${RESERVE_URL}
+
+出力ルール:
+- ユーザーにそのまま送る本文のみ出力
+- URLと電話番号はそのまま表示
+- 改行を自然に使う
         `.trim(),
       },
       {
@@ -62,7 +74,9 @@ export async function askAI(userMessage) {
   });
 
   const text = response.choices[0]?.message?.content?.trim();
-  if (!text) return fallbackReply();
+  if (!text) {
+    return fallbackReply();
+  }
 
   return formatForLine(text);
 }
