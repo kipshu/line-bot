@@ -1,14 +1,10 @@
-
 import crypto from "crypto";
 
 const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
 const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
 
 export function verifyLineSignature(req) {
-  if (!LINE_CHANNEL_SECRET) {
-    console.error("LINE_CHANNEL_SECRET is not set. Rejecting request.");
-    return false;
-  }
+  if (!LINE_CHANNEL_SECRET) return false;
 
   const signature = req.headers["x-line-signature"];
   if (!signature || !req.rawBody) return false;
@@ -26,6 +22,10 @@ export function verifyLineSignature(req) {
 }
 
 export async function replyToLine(replyToken, text) {
+  if (!ACCESS_TOKEN) {
+    throw new Error("LINE_ACCESS_TOKEN not set");
+  }
+
   const response = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
@@ -34,12 +34,11 @@ export async function replyToLine(replyToken, text) {
     },
     body: JSON.stringify({
       replyToken,
-      messages: [{ type: "text", text: text.slice(0, 5000) }],
+      messages: [{ type: "text", text: text.slice(0, 1000) }],
     }),
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`LINE reply failed: ${response.status} ${body}`);
+    throw new Error("LINE reply failed");
   }
 }
