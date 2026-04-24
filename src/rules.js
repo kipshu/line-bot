@@ -1,5 +1,4 @@
-
-import { KEYWORDS, PHONE_NUMBER, RESERVE_URL } from "./config.js";
+import { KEYWORDS, PHONE_NUMBER, RESERVE_URL, KEYWORD_PRIORITY } from "./config.js";
 import { getUserState, setUserState } from "./state.js";
 import {
   mainMenu,
@@ -13,14 +12,12 @@ function normalizeText(text) {
   return (text || "").trim().replace(/\s+/g, " ");
 }
 
-function includesAny(text, keywords) {
+function includesAny(text, keywords = []) {
   return keywords.some((keyword) => text.includes(keyword));
 }
 
 function detailedRuleReply(text) {
-  if (includesAny(text, KEYWORDS.urgent)) {
-    return painReply();
-  }
+  if (includesAny(text, KEYWORDS.urgent)) return painReply();
 
   if (includesAny(text, KEYWORDS.mildPain)) {
     return `しみる・違和感がある場合は、早めの確認をおすすめします。
@@ -156,11 +153,21 @@ export function getRuleBasedReply(userMessage, userId) {
     return mainMenu();
   }
 
-  const isPainLike =
+  // noPainメニュー中は、①〜⑤をカテゴリ回答として優先
+  if (state.lastReply === "no_pain" || state.category === "no_pain") {
+    const category = categoryReply(text);
+    if (category) {
+      setUserState(userId, {
+        category: "category",
+        painCount: 0,
+        lastReply: "category",
+      });
+      return category;
+    }
+  }
+
+  const isExplicitPain =
     text === "① はい（痛み・腫れがある）" ||
-    text === "①" ||
-    text === "1" ||
-    text === "はい" ||
     text.includes("痛みあり") ||
     text.includes("腫れあり") ||
     text.includes("痛") ||
@@ -168,9 +175,15 @@ export function getRuleBasedReply(userMessage, userId) {
     text.includes("出血") ||
     text.includes("しみる") ||
     text.includes("ズキズキ") ||
-    text.includes("噛むと痛い");
+    text.includes("噛むと痛い") ||
+    includesAny(text, KEYWORDS.urgent) ||
+    includesAny(text, KEYWORDS.mildPain);
 
-  if (isPainLike) {
+  const isMenuPainChoice =
+    (text === "①" || text === "1" || text === "はい") &&
+    (state.lastReply === "menu" || !state.lastReply);
+
+  if (isExplicitPain || isMenuPainChoice) {
     const nextPainCount = (state.painCount || 0) + 1;
     setUserState(userId, {
       category: "pain",
@@ -180,26 +193,35 @@ export function getRuleBasedReply(userMessage, userId) {
     return painReply(nextPainCount >= 2);
   }
 
-  if (
+  const isNoPainChoice =
     text === "② いいえ（痛み・腫れはない）" ||
-    text === "②" ||
-    text === "2" ||
-    text === "いいえ" ||
     text.includes("痛みない") ||
-    text.includes("痛みなし")
-  ) {
-    setUserState(userId, { category: "no_pain", painCount: 0, lastReply: "no_pain" });
+    text.includes("痛みなし") ||
+    ((text === "②" || text === "2" || text === "いいえ") &&
+      (state.lastReply === "menu" || !state.lastReply));
+
+  if (isNoPainChoice) {
+    setUserState(userId, {
+      category: "no_pain",
+      painCount: 0,
+      lastReply: "no_pain",
+    });
     return noPainMenu();
   }
 
   if (
     text === "③ わからない・相談したい" ||
-    text === "③" ||
-    text === "3" ||
     text.includes("相談") ||
-    text.includes("わからない")
+    text.includes("わからない") ||
+    ((text === "③" || text === "3") &&
+      (state.lastReply === "menu" || !state.lastReply))
   ) {
-    setUserState(userId, { category: "consult", painCount: 0, lastReply: "consult" });
+    setUserState(userId, {
+      category: "consult",
+      painCount: 0,
+      lastReply: "consult",
+    });
+
     return `ご相談ありがとうございます。
 
 今のお困りごとに近いものを送ってください。
@@ -216,32 +238,31 @@ ${PHONE_NUMBER}`;
 
   const category = categoryReply(text);
   if (category) {
-    setUserState(userId, { category: "category", painCount: 0, lastReply: "category" });
+    setUserState(userId, {
+      category: "category",
+      painCount: 0,
+      lastReply: "category",
+    });
     return category;
   }
 
   const detailed = detailedRuleReply(text);
   if (detailed) {
-    const painLikeDetailed =
-      includesAny(text, KEYWORDS.urgent) || includesAny(text, KEYWORDS.mildPain);
-
-    if (painLikeDetailed) {
-      const nextPainCount = (state.painCount || 0) + 1;
-      setUserState(userId, {
-        category: "pain",
-        painCount: nextPainCount,
-        lastReply: "pain",
-      });
-      return painReply(nextPainCount >= 2);
-    }
-
-    setUserState(userId, { category: "detailed", painCount: 0, lastReply: "detailed" });
+    setUserState(userId, {
+      category: "detailed",
+      painCount: 0,
+      lastReply: "detailed",
+    });
     return detailed;
   }
 
   const consult = consultReply(text);
   if (consult) {
-    setUserState(userId, { category: "consult", painCount: 0, lastReply: "consult" });
+    setUserState(userId, {
+      category: "consult",
+      painCount: 0,
+      lastReply: "consult",
+    });
     return consult;
   }
 
