@@ -99,6 +99,15 @@ export const KEYWORDS = {
   child: ["子ども", "こども", "子供", "乳歯", "フッ素", "学校検診"],
 };
 
+ambiguous: [
+  "なんか変",
+  "違和感",
+  "おかしい",
+  "変な感じ",
+  "気になる",
+  "やばい",
+],
+
 // 優先順位（重要）
 export const KEYWORD_PRIORITY = [
   "urgent",
