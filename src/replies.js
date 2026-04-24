@@ -1,6 +1,9 @@
-
-import { CLINIC_NAME, RESERVE_URL, PHONE_NUMBER } from "./config.js";
+import { CLINIC_NAME, RESERVE_URL, PHONE_NUMBER, KEYWORDS } from "./config.js";
 import { isBusinessOpenNow } from "./time.js";
+
+function hasAny(text, words) {
+  return words.some((word) => text.includes(word));
+}
 
 export function fallbackReply() {
   return `ありがとうございます。
@@ -93,13 +96,7 @@ ${RESERVE_URL}
 }
 
 export function categoryReply(text) {
-  if (
-    text === "1" ||
-    text === "①" ||
-    text === "① 詰め物・被せ物" ||
-    text.includes("詰め") ||
-    text.includes("被せ")
-  ) {
+  if (text === "1" || text === "①" || hasAny(text, KEYWORDS.filling)) {
     return `詰め物・被せ物のご相談ですね。
 
 ご予約はこちら
@@ -111,12 +108,7 @@ ${PHONE_NUMBER}
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
-  if (
-    text === "2" ||
-    text === "②" ||
-    text === "② 親知らず" ||
-    text.includes("親知らず")
-  ) {
+  if (text === "2" || text === "②" || hasAny(text, KEYWORDS.wisdom)) {
     return `親知らずのご相談ですね。
 
 当院では口腔外科系のご相談にも対応しています。
@@ -130,14 +122,7 @@ ${PHONE_NUMBER}
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
-  if (
-    text === "3" ||
-    text === "③" ||
-    text === "③ 見た目・セラミック" ||
-    text.includes("見た目") ||
-    text.includes("セラミック") ||
-    text.includes("審美")
-  ) {
+  if (text === "3" || text === "③" || hasAny(text, KEYWORDS.esthetic)) {
     return `見た目・セラミックのご相談ですね。
 
 カウンセリング予約はこちら
@@ -149,13 +134,7 @@ ${PHONE_NUMBER}
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
-  if (
-    text === "4" ||
-    text === "④" ||
-    text === "④ クリーニング" ||
-    text.includes("クリーニング") ||
-    text.includes("メンテ")
-  ) {
+  if (text === "4" || text === "④" || hasAny(text, KEYWORDS.cleaning)) {
     return `クリーニング・メンテナンスのご相談ですね。
 
 ご予約はこちら
@@ -167,12 +146,7 @@ ${PHONE_NUMBER}
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
-  if (
-    text === "5" ||
-    text === "⑤" ||
-    text === "⑤ その他" ||
-    text.includes("その他")
-  ) {
+  if (text === "5" || text === "⑤" || text.includes("その他")) {
     return `ありがとうございます。
 
 詳しい内容をこのままメッセージで送っていただくか、
@@ -192,23 +166,21 @@ ${RESERVE_URL}
 
 export function consultReply(text) {
   if (
-    text.includes("痛") ||
-    text.includes("腫れ") ||
-    text.includes("出血") ||
-    text.includes("しみる") ||
-    text.includes("噛むと痛い") ||
-    text.includes("ズキズキ")
+    hasAny(text, KEYWORDS.urgent) ||
+    hasAny(text, KEYWORDS.mildPain) ||
+    hasAny(text, KEYWORDS.broken) ||
+    hasAny(text, KEYWORDS.filling)
   ) {
     return painReply();
   }
 
   if (
-    text.includes("親知らず") ||
-    text.includes("セラミック") ||
-    text.includes("見た目") ||
-    text.includes("詰め物") ||
-    text.includes("被せ物") ||
-    text.includes("クリーニング")
+    hasAny(text, KEYWORDS.wisdom) ||
+    hasAny(text, KEYWORDS.esthetic) ||
+    hasAny(text, KEYWORDS.cleaning) ||
+    hasAny(text, KEYWORDS.gum) ||
+    hasAny(text, KEYWORDS.denture) ||
+    hasAny(text, KEYWORDS.child)
   ) {
     return `ありがとうございます。
 
