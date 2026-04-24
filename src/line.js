@@ -1,44 +1,84 @@
 import crypto from "crypto";
-
-const ACCESS_TOKEN = process.env.LINE_ACCESS_TOKEN;
-const LINE_CHANNEL_SECRET = process.env.LINE_CHANNEL_SECRET;
+import fetch from "node-fetch";
 
 export function verifyLineSignature(req) {
-  if (!LINE_CHANNEL_SECRET) return false;
+  const channelSecret = process.env.LINE_CHANNEL_SECRET;
+
+  if (!channelSecret) {
+    console.warn("Missing LINE_CHANNEL_SECRET");
+    return false;
+  }
 
   const signature = req.headers["x-line-signature"];
-  if (!signature || !req.rawBody) return false;
 
-  const digest = crypto
-    .createHmac("sha256", LINE_CHANNEL_SECRET)
+  if (!signature || !req.rawBody) {
+    return false;
+  }
+
+  const hash = crypto
+    .createHmac("sha256", channelSecret)
     .update(req.rawBody)
     .digest("base64");
 
-  const a = Buffer.from(signature);
-  const b = Buffer.from(digest);
-
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  return hash === signature;
 }
 
 export async function replyToLine(replyToken, text) {
-  if (!ACCESS_TOKEN) {
-    throw new Error("LINE_ACCESS_TOKEN not set");
+  const accessToken = process.env.LINE_ACCESS_TOKEN;
+
+  if (!accessToken) {
+    console.warn("Missing LINE_ACCESS_TOKEN");
+    return;
   }
 
   const response = await fetch("https://api.line.me/v2/bot/message/reply", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${ACCESS_TOKEN}`,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
       replyToken,
-      messages: [{ type: "text", text: text.slice(0, 1000) }],
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
     }),
   });
 
   if (!response.ok) {
-    throw new Error("LINE reply failed");
+    console.error("LINE reply failed:", await response.text());
+  }
+}
+
+export async function pushToLine(to, text) {
+  const accessToken = process.env.LINE_ACCESS_TOKEN;
+
+  if (!accessToken || !to) {
+    console.warn("Missing LINE_ACCESS_TOKEN or push target");
+    return;
+  }
+
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      to,
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    console.error("LINE push failed:", await response.text());
   }
 }
