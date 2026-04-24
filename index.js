@@ -21,7 +21,7 @@ app.use(
 setInterval(cleanupOldStates, 1000 * 60 * 30);
 
 async function getReplyText(userMessage, userId) {
-  const ruleReply = getRuleBasedReply(userMessage, userId);
+  const ruleReply = await getRuleBasedReply(userMessage, userId);
   if (ruleReply) return ruleReply;
 
   try {
@@ -35,7 +35,6 @@ async function getReplyText(userMessage, userId) {
 
     return aiReply;
   } catch (_error) {
-    // 患者入力やAPI詳細をログに出さない
     console.error("OpenAI error occurred");
     return fallbackReply();
   }
@@ -47,8 +46,7 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(401);
   }
 
-  // LINEには先に200を返す
-  // 500を返すとLINE側でリトライされ、二重送信になる可能性がある
+  // LINE側の再送防止のため、先に200を返す
   res.sendStatus(200);
 
   const events = req.body.events || [];
@@ -59,13 +57,12 @@ app.post("/webhook", async (req, res) => {
     if (!event.replyToken) continue;
 
     const userMessage = event.message.text;
-    const userId = event.source?.userId || "unknown-user";
+    const userId = event.source?.userId || "unknown";
 
     try {
       const replyText = await getReplyText(userMessage, userId);
       await replyToLine(event.replyToken, replyText);
     } catch (_error) {
-      // userId・患者入力・詳細エラーはログに出さない
       console.error("Event handling error occurred");
     }
   }
