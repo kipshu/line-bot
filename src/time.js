@@ -6,8 +6,8 @@ function toMinutes(hhmm) {
   return h * 60 + m;
 }
 
-function isInRange(dateStr, ranges) {
-  return ranges.some(r => dateStr >= r.start && dateStr <= r.end);
+function isInRange(dateStr, ranges = []) {
+  return ranges.some((r) => dateStr >= r.start && dateStr <= r.end);
 }
 
 export function getTokyoNowParts() {
@@ -23,13 +23,23 @@ export function getTokyoNowParts() {
   }).formatToParts(new Date());
 
   const map = {};
-  parts.forEach(p => (map[p.type] = p.value));
+  parts.forEach((p) => {
+    map[p.type] = p.value;
+  });
 
-  const w = { 日:0, 月:1, 火:2, 水:3, 木:4, 金:5, 土:6 };
+  const weekdayMap = {
+    日: 0,
+    月: 1,
+    火: 2,
+    水: 3,
+    木: 4,
+    金: 5,
+    土: 6,
+  };
 
   return {
     dateStr: `${map.year}-${map.month}-${map.day}`,
-    day: w[map.weekday],
+    day: weekdayMap[map.weekday],
     hour: Number(map.hour),
     minute: Number(map.minute),
   };
@@ -41,9 +51,12 @@ export async function isBusinessOpenNow() {
   if (isInRange(now.dateStr, SPECIAL_CLOSED)) return false;
   if (await isJapaneseHoliday(now.dateStr)) return false;
 
-  const s = BUSINESS_HOURS[now.day];
-  if (!s) return false;
+  const schedule = BUSINESS_HOURS[now.day];
+  if (!schedule) return false;
 
-  const cur = now.hour * 60 + now.minute;
-  return cur >= toMinutes(s.start) && cur < toMinutes(s.end);
+  const currentMinutes = now.hour * 60 + now.minute;
+  const startMinutes = toMinutes(schedule.start);
+  const endMinutes = toMinutes(schedule.end);
+
+  return currentMinutes >= startMinutes && currentMinutes < endMinutes;
 }
