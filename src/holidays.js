@@ -1,32 +1,31 @@
 let holidayCache = null;
-let holidayCacheDate = "";
+let fetchedAt = 0;
+
+const URL = "https://holidays-jp.github.io/api/v1/date.json";
+const TTL = 1000 * 60 * 60 * 24;
 
 export async function fetchJapaneseHolidays() {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = Date.now();
 
-  if (holidayCache && holidayCacheDate === today) {
+  if (holidayCache && now - fetchedAt < TTL) {
     return holidayCache;
   }
 
   try {
-    const response = await fetch("https://holidays-jp.github.io/api/v1/date.json");
+    const res = await fetch(URL);
+    if (!res.ok) throw new Error();
 
-    if (!response.ok) {
-      throw new Error("holiday api failed");
-    }
-
-    const data = await response.json();
-
+    const data = await res.json();
     holidayCache = data;
-    holidayCacheDate = today;
+    fetchedAt = now;
 
     return data;
-  } catch (_error) {
+  } catch {
     return {};
   }
 }
 
 export async function isJapaneseHoliday(dateStr) {
-  const holidays = await fetchJapaneseHolidays();
-  return Boolean(holidays[dateStr]);
+  const data = await fetchJapaneseHolidays();
+  return Boolean(data[dateStr]);
 }
