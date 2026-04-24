@@ -5,9 +5,10 @@ import { askAI } from "./src/ai.js";
 import { fallbackReply } from "./src/replies.js";
 import { verifyLineSignature, replyToLine } from "./src/line.js";
 
-console.log("NEW CODE DEPLOYED 2026-04-23");
+console.log("NEW CODE DEPLOYED 2026-04-24");
 
 const app = express();
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -25,10 +26,17 @@ async function getReplyText(userMessage, userId) {
 
   try {
     const aiReply = await askAI(userMessage);
-    setUserState(userId, { category: "ai", painCount: 0, lastReply: "ai" });
+
+    setUserState(userId, {
+      category: "ai",
+      painCount: 0,
+      lastReply: "ai",
+    });
+
     return aiReply;
-  } catch (error) {
-    console.error("OpenAI error:", error);
+  } catch (_error) {
+    // 患者入力やAPI詳細をログに出さない
+    console.error("OpenAI error occurred");
     return fallbackReply();
   }
 }
@@ -39,13 +47,15 @@ app.post("/webhook", async (req, res) => {
     return res.sendStatus(401);
   }
 
-  // LINEには常に200を返す（500だとリトライされて二重送信になる）
+  // LINEには先に200を返す
+  // 500を返すとLINE側でリトライされ、二重送信になる可能性がある
   res.sendStatus(200);
 
   const events = req.body.events || [];
 
   for (const event of events) {
-    if (event.type !== "message" || event.message.type !== "text") continue;
+    if (event.type !== "message") continue;
+    if (event.message?.type !== "text") continue;
     if (!event.replyToken) continue;
 
     const userMessage = event.message.text;
@@ -54,8 +64,9 @@ app.post("/webhook", async (req, res) => {
     try {
       const replyText = await getReplyText(userMessage, userId);
       await replyToLine(event.replyToken, replyText);
-    } catch (error) {
-      console.error("Event handling error for userId:", userId, error);
+    } catch (_error) {
+      // userId・患者入力・詳細エラーはログに出さない
+      console.error("Event handling error occurred");
     }
   }
 });
@@ -65,6 +76,7 @@ app.get("/", (_req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`Server running on ${PORT}`);
 });
