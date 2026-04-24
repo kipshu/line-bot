@@ -20,7 +20,83 @@ app.use(
 // 30分ごとに古い状態を掃除
 setInterval(cleanupOldStates, 1000 * 60 * 30);
 
+// ===== 最優先：抜歯後出血系の安全分岐 =====
+function getBleedingEmergencyReply(userMessage) {
+  const text = (userMessage || "").toLowerCase();
+
+  const hasBleedingWord =
+    text.includes("血") ||
+    text.includes("出血") ||
+    text.includes("血が止まらない") ||
+    text.includes("止まらない") ||
+    text.includes("血がとまらない") ||
+    text.includes("とまらない");
+
+  if (!hasBleedingWord) return null;
+
+  const alreadyTried =
+    text.includes("やった") ||
+    text.includes("やってる") ||
+    text.includes("やりました") ||
+    text.includes("試した") ||
+    text.includes("ためした") ||
+    text.includes("ガーゼ") ||
+    text.includes("噛んで") ||
+    text.includes("かんで") ||
+    text.includes("圧迫") ||
+    text.includes("押さえた") ||
+    text.includes("おさえた");
+
+  const notStopped =
+    text.includes("止まらない") ||
+    text.includes("とまらない") ||
+    text.includes("止まってない") ||
+    text.includes("まだ出る") ||
+    text.includes("まだでる") ||
+    text.includes("出続ける") ||
+    text.includes("でつづける");
+
+  // すでに圧迫したのに止まらない人
+  if (alreadyTried && notStopped) {
+    return `抜歯後の出血が続いている場合は、早めの対応が必要です。
+
+すでに「清潔なガーゼを強く噛んで、途中で外さず10〜15分しっかり圧迫」を行っても止まらない場合は、
+院内での止血処置が必要な可能性があります。
+
+この時点で、すぐにお電話ください。
+📞 03-5779-9225
+
+口の中に血がたまり続ける、何度も吐き出すほど出血する場合も、すぐにお電話ください。`;
+  }
+
+  // 初回案内
+  return `抜歯後の出血が続いている場合は、早めの対応が必要です。
+
+まずは清潔なガーゼやティッシュをしっかり噛んで、
+10〜15分ほど強めに圧迫してください。
+※途中で外さず、そのまま続けるのが大切です
+
+それでも止まらない場合は、
+新しいガーゼに替えて再度しっかり圧迫してください。
+
+すでに十分に圧迫しても止まらない場合や、
+口の中に血がたまり続ける場合は、すぐにお電話ください。
+📞 03-5779-9225`;
+}
+
 async function getReplyText(userMessage, userId) {
+  // ===== ここを最優先にする =====
+  const bleedingReply = getBleedingEmergencyReply(userMessage);
+  if (bleedingReply) {
+    setUserState(userId, {
+      category: "emergency_bleeding",
+      painCount: 0,
+      lastReply: "bleeding_emergency",
+    });
+
+    return bleedingReply;
+  }
+
   const ruleReply = await getRuleBasedReply(userMessage, userId);
   if (ruleReply) return ruleReply;
 
