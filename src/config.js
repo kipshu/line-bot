@@ -2,6 +2,7 @@ export const CLINIC_NAME = "大畑歯科口腔外科 世田谷分院";
 export const RESERVE_URL = "https://www.ohata-dental.jp/setagaya/index.html";
 export const PHONE_NUMBER = "03-5779-9225";
 
+// 曜日ごとの診療時間
 export const BUSINESS_HOURS = {
   0: { start: "09:00", end: "16:00" }, // 日
   1: { start: "10:00", end: "19:00" }, // 月
@@ -12,6 +13,17 @@ export const BUSINESS_HOURS = {
   6: { start: "10:00", end: "19:00" }, // 土
 };
 
+// 特別休診（手動管理）
+// ※ ここだけ触ればOKにするのが重要
+export const SPECIAL_CLOSED = [
+  // お盆
+  { start: "2026-08-13", end: "2026-08-16" },
+
+  // 年末年始
+  { start: "2026-12-29", end: "2027-01-03" },
+];
+
+// キーワード分類
 export const KEYWORDS = {
   urgent: [
     "痛い",
@@ -33,13 +45,7 @@ export const KEYWORDS = {
     "抜けた",
   ],
 
-  broken: [
-    "欠けた",
-    "割れた",
-    "ヒビ",
-    "ひび",
-    "折れた",
-  ],
+  broken: ["欠けた", "割れた", "ヒビ", "ひび", "折れた"],
 
   filling: [
     "詰め物",
@@ -63,28 +69,11 @@ export const KEYWORDS = {
     "軽い痛み",
   ],
 
-  gum: [
-    "歯ぐき",
-    "歯茎",
-    "歯周病",
-    "口臭",
-    "膿",
-    "うみ",
-  ],
+  gum: ["歯ぐき", "歯茎", "歯周病", "口臭", "膿", "うみ"],
 
-  wisdom: [
-    "親知らず",
-    "親不知",
-    "抜歯",
-  ],
+  wisdom: ["親知らず", "親不知", "抜歯"],
 
-  denture: [
-    "入れ歯",
-    "義歯",
-    "合わない",
-    "外れる",
-    "噛めない",
-  ],
+  denture: ["入れ歯", "義歯", "合わない", "外れる", "噛めない"],
 
   esthetic: [
     "ホワイトニング",
@@ -107,16 +96,10 @@ export const KEYWORDS = {
     "歯の掃除",
   ],
 
-  child: [
-    "子ども",
-    "こども",
-    "子供",
-    "乳歯",
-    "フッ素",
-    "学校検診",
-  ],
+  child: ["子ども", "こども", "子供", "乳歯", "フッ素", "学校検診"],
 };
 
+// 優先順位（重要）
 export const KEYWORD_PRIORITY = [
   "urgent",
   "broken",
