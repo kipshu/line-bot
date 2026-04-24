@@ -1,18 +1,29 @@
 import { CLINIC_NAME, RESERVE_URL, PHONE_NUMBER, KEYWORDS } from "./config.js";
 import { isBusinessOpenNow } from "./time.js";
 
-function hasAny(text, words) {
+function hasAny(text, words = []) {
   return words.some((word) => text.includes(word));
+}
+
+function phoneLine(label = "お電話はこちら") {
+  return `${label}
+📞 ${PHONE_NUMBER}`;
+}
+
+function reserveLine(label = "ご予約はこちら（24時間受付）") {
+  return `${label}
+${RESERVE_URL}`;
 }
 
 export function fallbackReply() {
   return `ありがとうございます。
 
 詳しい内容をこのまま送っていただくか、
-お電話 ${PHONE_NUMBER} にてご相談ください。
+お電話にてご相談ください。
 
-ご予約はこちら
-${RESERVE_URL}`;
+${phoneLine()}
+
+${reserveLine()}`;
 }
 
 export function mainMenu() {
@@ -39,15 +50,17 @@ export function noPainMenu() {
 ※ 最初に戻るときは「メニュー」と送ってください。`;
 }
 
-export function painReply(isFollowUp = false) {
-  if (isBusinessOpenNow()) {
+export async function painReply(isFollowUp = false) {
+  const openNow = await isBusinessOpenNow();
+
+  if (openNow) {
     if (isFollowUp) {
-      return `症状が強そうです。
+      return `症状が強い可能性があります。
 
 本日対応できる可能性があります。
 お電話でのご案内が最短です。
 
-${PHONE_NUMBER}`;
+${phoneLine("お急ぎの場合はこちら")}`;
     }
 
     return `痛み・腫れがある場合は、早めの確認をおすすめします。
@@ -55,7 +68,7 @@ ${PHONE_NUMBER}`;
 本日対応できる可能性があります。
 まずはお電話ください。
 
-${PHONE_NUMBER}
+${phoneLine("お電話はこちら")}
 
 このまま
 ・どこが痛むか
@@ -63,32 +76,30 @@ ${PHONE_NUMBER}
 ・いつからか
 を送っていただければ、受付確認用の内容としてお預かりできます。
 
-予約をご希望の方はこちら
-${RESERVE_URL}
+${reserveLine()}
 
 最初に戻る場合は「メニュー」と送ってください。`;
   }
 
   if (isFollowUp) {
-    return `症状が強そうです。
+    return `症状が強い可能性があります。
 
 お急ぎの場合は、
 まずはお電話でご確認ください。
 
-${PHONE_NUMBER}
+${phoneLine("お急ぎの場合はこちら")}
 
-予約はこちら
-${RESERVE_URL}`;
+${reserveLine()}`;
   }
 
   return `痛み・腫れがある場合は、早めの確認をおすすめします。
 現在は診療時間外です。
 
 お急ぎの場合は、まずはお電話でご確認ください。
-${PHONE_NUMBER}
 
-予約をご希望の方はこちら
-${RESERVE_URL}
+${phoneLine("お急ぎの場合はこちら")}
+
+${reserveLine()}
 
 強い痛み・強い腫れ・出血がある場合は、無理をせず早めの相談をご検討ください。
 
@@ -99,11 +110,9 @@ export function categoryReply(text) {
   if (text === "1" || text === "①" || hasAny(text, KEYWORDS.filling)) {
     return `詰め物・被せ物のご相談ですね。
 
-ご予約はこちら
-${RESERVE_URL}
+${reserveLine()}
 
-お電話でのご相談
-${PHONE_NUMBER}
+${phoneLine("お電話でのご相談")}
 
 最初に戻る場合は「メニュー」と送ってください。`;
   }
@@ -113,11 +122,9 @@ ${PHONE_NUMBER}
 
 当院では口腔外科系のご相談にも対応しています。
 
-ご予約はこちら
-${RESERVE_URL}
+${reserveLine()}
 
-お電話でのご相談
-${PHONE_NUMBER}
+${phoneLine("お電話でのご相談")}
 
 最初に戻る場合は「メニュー」と送ってください。`;
   }
@@ -125,11 +132,9 @@ ${PHONE_NUMBER}
   if (text === "3" || text === "③" || hasAny(text, KEYWORDS.esthetic)) {
     return `見た目・セラミックのご相談ですね。
 
-カウンセリング予約はこちら
-${RESERVE_URL}
+${reserveLine("カウンセリング予約はこちら（24時間受付）")}
 
-お電話でのご相談
-${PHONE_NUMBER}
+${phoneLine("お電話でのご相談")}
 
 最初に戻る場合は「メニュー」と送ってください。`;
   }
@@ -137,11 +142,9 @@ ${PHONE_NUMBER}
   if (text === "4" || text === "④" || hasAny(text, KEYWORDS.cleaning)) {
     return `クリーニング・メンテナンスのご相談ですね。
 
-ご予約はこちら
-${RESERVE_URL}
+${reserveLine()}
 
-お電話でのご相談
-${PHONE_NUMBER}
+${phoneLine("お電話でのご相談")}
 
 最初に戻る場合は「メニュー」と送ってください。`;
   }
@@ -152,11 +155,9 @@ ${PHONE_NUMBER}
 詳しい内容をこのままメッセージで送っていただくか、
 お電話でご相談ください。
 
-お電話
-${PHONE_NUMBER}
+${phoneLine()}
 
-ご予約はこちら
-${RESERVE_URL}
+${reserveLine()}
 
 最初に戻る場合は「メニュー」と送ってください。`;
   }
@@ -164,14 +165,14 @@ ${RESERVE_URL}
   return null;
 }
 
-export function consultReply(text) {
+export async function consultReply(text) {
   if (
     hasAny(text, KEYWORDS.urgent) ||
     hasAny(text, KEYWORDS.mildPain) ||
     hasAny(text, KEYWORDS.broken) ||
     hasAny(text, KEYWORDS.filling)
   ) {
-    return painReply();
+    return await painReply();
   }
 
   if (
